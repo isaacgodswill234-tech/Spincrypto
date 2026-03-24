@@ -990,14 +990,14 @@
                                             <div className="flex items-center gap-1.5">
                                                 <input 
                                                     readOnly 
-                                                    value={`https://t.me/${config.botUsername}/${config.appName}?startapp=${user.telegramId || user.uid}`}
+                                                    value={`https://t.me/${config.botUsername}?start=${user.telegramId || user.uid}`}
                                                     className="flex-1 bg-white border border-zinc-100 rounded-lg p-1.5 text-[9px] font-mono focus:outline-none"
                                                 />
                                                 <Button 
                                                     variant="secondary" 
                                                     className="py-1.5 px-3 text-[9px]"
                                                     onClick={() => {
-                                                        navigator.clipboard.writeText(`https://t.me/${config.botUsername}/${config.appName}?startapp=${user.telegramId || user.uid}`);
+                                                        navigator.clipboard.writeText(`https://t.me/${config.botUsername}?start=${user.telegramId || user.uid}`);
                                                         addToast("Link copied!", "success");
                                                     }}
                                                 >
