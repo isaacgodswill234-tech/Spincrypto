@@ -7,17 +7,18 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 </head>
 <body>
     <div id="app">
         <div id="sidebar">
             <div class="sidebar-header">
                 <h2>Files</h2>
-                <button id="new-file-btn" title="New File">+</button>
+                <button id="new-file-btn">+</button>
             </div>
             <div id="file-tree"></div>
             <div class="sidebar-footer">
-                <button id="download-all-btn">Download All</button>
+                <button id="download-all-btn">Export ZIP</button>
                 <button id="admin-btn">⚙️</button>
             </div>
         </div>
@@ -26,7 +27,7 @@
             <div id="chat-panel">
                 <div id="chat-messages"></div>
                 <div id="chat-input-area">
-                    <textarea id="chat-input" placeholder="Ask AI to build something..."></textarea>
+                    <textarea id="chat-input" placeholder="Tell AI what to build... Shift+Enter for newline"></textarea>
                     <button id="send-btn">Send</button>
                 </div>
             </div>
@@ -35,18 +36,21 @@
 
             <div id="editor-preview">
                 <div id="tabs"></div>
-                <div id="editor"></div>
-                <iframe id="preview" sandbox="allow-scripts allow-same-origin"></iframe>
+                <div id="editor-container"></div>
+                <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                <div id="editor-toolbar">
+                    <button id="toggle-preview-btn">Preview</button>
+                    <button id="run-btn">Run</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Admin Modal -->
     <div id="admin-modal" class="modal hidden">
         <div class="modal-content">
             <h3>Admin Panel</h3>
             <div id="admin-login">
-                <input type="password" id="admin-pass-input" placeholder="Enter admin password">
+                <input type="password" id="admin-pass-input" placeholder="Admin password. Default: admin">
                 <button id="admin-login-btn">Unlock</button>
             </div>
             <div id="admin-settings" class="hidden">
@@ -57,28 +61,28 @@
                 <select id="model-select">
                     <option value="deepseek/deepseek-chat-v3.1:free">DeepSeek V3.1 Free</option>
                     <option value="deepseek/deepseek-r1:free">DeepSeek R1 Free</option>
-                    <option value="meta-llama/llama-3.1-70b-instruct:free">Llama 3.1 70B Free</option>
+                    <option value="meta-llama/llama-3.1-405b-instruct:free">Llama 3.1 405B Free</option>
                     <option value="qwen/qwen-2.5-coder-32b-instruct:free">Qwen 2.5 Coder 32B Free</option>
-                    <option value="google/gemma-2-9b-it:free">Gemma 2 9B Free</option>
                 </select>
 
                 <label>Admin Password</label>
-                <input type="password" id="admin-pass-set" placeholder="Set new password">
+                <input type="password" id="admin-pass-set" placeholder="Change password">
 
                 <div class="toggle-row">
-                    <label>Send full chat history to model</label>
+                    <span>Send full chat history</span>
                     <input type="checkbox" id="full-history-toggle" checked>
                 </div>
 
                 <div class="btn-row">
                     <button id="save-settings-btn">Save</button>
-                    <button id="clear-chat-btn" class="danger">Clear All Memory</button>
+                    <button id="clear-chat-btn" class="danger">Wipe Memory</button>
                     <button id="close-admin-btn">Close</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="app.js"></script>
 </body>
-</html>
+            </html>
