@@ -1,9 +1,24 @@
 const $ = id => document.getElementById(id);
-const LS_KEY = 'ai_studio_data';
+const LS_KEY = 'ai_studio_v2';
 
-// State
+let editor;
 let state = {
-    files: { 'index.html': '<h1>Hello</h1>' },
+    files: {
+        'index.html': `<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>It works</h1>
+    <button onclick="sayHi()">Click me</button>
+    <script src="script.js"><\/script>
+</body>
+</html>`,
+        'style.css': `body { font-family: sans-serif; padding: 40px; } h1 { color: #8ab4f8; }`,
+        'script.js': `function sayHi() { alert('Hello from JS!'); }`
+    },
     activeFile: 'index.html',
     chat: [],
     settings: {
@@ -11,26 +26,51 @@ let state = {
         model: 'deepseek/deepseek-chat-v3.1:free',
         adminPass: 'admin',
         fullHistory: true
-    }
+    },
+    showPreview: false
 };
 
-// Load
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' }});
+require(['vs/editor/editor.main'], function () {
+    editor = monaco.editor.create($('editor-container'), {
+        value: state.files[state.activeFile],
+        language: getLang(state.activeFile),
+        theme: 'vs-dark',
+        automaticLayout: true,
+        minimap: { enabled: false }
+    });
+
+    editor.onDidChangeModelContent(() => {
+        state.files[state.activeFile] = editor.getValue();
+        saveState();
+        if (state.showPreview) updatePreview();
+    });
+
+    loadState();
+});
+
+function getLang(filename) {
+    if (filename.endsWith('.html')) return 'html';
+    if (filename.endsWith('.css')) return 'css';
+    if (filename.endsWith('.js')) return 'javascript';
+    if (filename.endsWith('.json')) return 'json';
+    return 'plaintext';
+}
+
 function loadState() {
     const saved = localStorage.getItem(LS_KEY);
-    if (saved) state = JSON.parse(saved);
+    if (saved) state = {...state,...JSON.parse(saved) };
     renderFiles();
     renderTabs();
-    renderEditor();
+    openFile(state.activeFile);
     renderChat();
     $('full-history-toggle').checked = state.settings.fullHistory;
 }
 
-// Save
 function saveState() {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
 }
 
-// Files
 function renderFiles() {
     $('file-tree').innerHTML = '';
     Object.keys(state.files).forEach(name => {
@@ -38,13 +78,18 @@ function renderFiles() {
         div.className = 'file-item' + (name === state.activeFile? ' active' : '');
         div.innerHTML = `<span>${name}</span><span class="file-delete">×</span>`;
         div.onclick = e => {
-            if (e.target.className === 'file-delete') {
-                delete state.files[name];
-                if (state.activeFile === name) state.activeFile = Object.keys(state.files)[0] || null;
-                saveState(); renderFiles(); renderTabs(); renderEditor();
+            if (e.target.classList.contains('file-delete')) {
+                e.stopPropagation();
+                if (confirm(`Delete ${name}?`)) {
+                    delete state.files[name];
+                    if (state.activeFile === name) {
+                        state.activeFile = Object.keys(state.files)[0] || null;
+                    }
+                    saveState(); renderFiles(); renderTabs();
+                    if (state.activeFile) openFile(state.activeFile);
+                }
             } else {
-                state.activeFile = name;
-                saveState(); renderFiles(); renderTabs(); renderEditor();
+                openFile(name);
             }
         };
         $('file-tree').appendChild(div);
@@ -56,52 +101,69 @@ function renderTabs() {
     Object.keys(state.files).forEach(name => {
         const tab = document.createElement('div');
         tab.className = 'tab' + (name === state.activeFile? ' active' : '');
-        tab.textContent = name;
-        tab.onclick = () => {
-            state.activeFile = name;
-            saveState(); renderFiles(); renderTabs(); renderEditor();
+        tab.innerHTML = `${name} <span class="tab-close">×</span>`;
+        tab.onclick = e => {
+            if (e.target.classList.contains('tab-close')) {
+                e.stopPropagation();
+                delete state.files[name];
+                if (state.activeFile === name) state.activeFile = Object.keys(state.files)[0] || null;
+                saveState(); renderFiles(); renderTabs();
+                if (state.activeFile) openFile(state.activeFile);
+            } else {
+                openFile(name);
+            }
         };
         $('tabs').appendChild(tab);
     });
 }
 
-function renderEditor() {
-    const editor = $('editor');
-    const preview = $('preview');
-    if (!state.activeFile) {
-        editor.innerHTML = '';
-        return;
+function openFile(name) {
+    state.activeFile = name;
+    if (editor) {
+        monaco.editor.setModelLanguage(editor.getModel(), getLang(name));
+        editor.setValue(state.files[name] || '');
     }
-    const content = state.files[state.activeFile] || '';
-    editor.innerHTML = `<textarea>${content.replace(/</g, '&lt;')}</textarea>`;
-    editor.querySelector('textarea').oninput = e => {
-        state.files[state.activeFile] = e.target.value;
-        saveState();
-        updatePreview();
-    };
+    saveState();
+    renderFiles();
+    renderTabs();
     updatePreview();
 }
 
 function updatePreview() {
-    const preview = $('preview');
-    const editor = $('editor');
-    if (state.activeFile && state.activeFile.endsWith('.html')) {
-        preview.style.display = 'block';
-        editor.style.display = 'none';
-        preview.srcdoc = state.files[state.activeFile];
-    } else {
-        preview.style.display = 'none';
-        editor.style.display = 'block';
+    if (!state.showPreview ||!state.activeFile.endsWith('.html')) {
+        $('preview').style.display = 'none';
+        $('editor-container').style.display = 'block';
+        return;
     }
+
+    let html = state.files[state.activeFile];
+    // Inline CSS and JS
+    html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (match, file) => {
+        return state.files[file]? `<style>${state.files[file]}</style>` : match;
+    });
+    html = html.replace(/<script src="([^"]+)"><\/script>/g, (match, file) => {
+        return state.files[file]? `<script>${state.files[file]}<\/script>` : match;
+    });
+
+    $('preview').srcdoc = html;
+    $('preview').style.display = 'block';
+    $('editor-container').style.display = 'none';
 }
 
-// Chat
+$('toggle-preview-btn').onclick = () => {
+    state.showPreview =!state.showPreview;
+    $('toggle-preview-btn').textContent = state.showPreview? 'Editor' : 'Preview';
+    updatePreview();
+};
+
+$('run-btn').onclick = updatePreview;
+
 function renderChat() {
     $('chat-messages').innerHTML = '';
     state.chat.forEach(m => {
         const div = document.createElement('div');
         div.className = `msg ${m.role}`;
-        div.innerHTML = DOMPurify.sanitize(marked.parse(m.content));
+        div.innerHTML = `<div class="msg-content">${DOMPurify.sanitize(marked.parse(m.content))}</div>`;
         $('chat-messages').appendChild(div);
     });
     $('chat-messages').scrollTop = $('chat-messages').scrollHeight;
@@ -112,22 +174,26 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
     if (!state.settings.apiKey) {
-        alert('Set your OpenRouter API key in Admin Panel first');
+        alert('Set OpenRouter API key in Admin Panel first. Gear icon bottom left.');
         return;
     }
 
+    $('send-btn').disabled = true;
     state.chat.push({ role: 'user', content: text });
     input.value = '';
     renderChat();
     saveState();
 
-    // Add thinking message
-    state.chat.push({ role: 'assistant', content: '...' });
+    state.chat.push({ role: 'assistant', content: 'Thinking...' });
     renderChat();
 
-    let messages = [{ role: 'system', content: 'You are an AI coding assistant. When asked to create files, wrap code in ```language:filename format. Example: ```html:index.html' }];
+    let messages = [{
+        role: 'system',
+        content: 'You are a coding assistant. When creating/updating files, use format: ```language:filename\\ncode\\n```. Example: ```html:index.html\\n<h1>Hi</h1>\\n```. Create multiple files if needed. Explain briefly.'
+    }];
+
     if (state.settings.fullHistory) {
-        messages = messages.concat(state.chat.slice(0, -1));
+        messages = messages.concat(state.chat.slice(0, -1).map(m => ({ role: m.role, content: m.content })));
     } else {
         messages.push(state.chat[state.chat.length - 2]);
     }
@@ -137,22 +203,27 @@ async function sendMessage() {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${state.settings.apiKey}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'HTTP-Referer': location.href,
+                'X-Title': 'Local AI Studio'
             },
             body: JSON.stringify({
                 model: state.settings.model,
                 messages: messages
             })
         });
+
+        if (!res.ok) throw new Error(`OpenRouter error: ${res.status}`);
         const data = await res.json();
         const reply = data.choices[0].message.content;
 
-        // Parse file blocks
         const fileRegex = /```(\w+):([^\n]+)\n([\s\S]*?)```/g;
-        let match;
+        let match, lastFile = null;
         while ((match = fileRegex.exec(reply))!== null) {
-            const [,, filename, content] = match;
-            state.files[filename.trim()] = content.trim();
+            const filename = match[2].trim();
+            const content = match[3].trim();
+            state.files[filename] = content;
+            lastFile = filename;
         }
 
         state.chat[state.chat.length - 1] = { role: 'assistant', content: reply };
@@ -160,12 +231,14 @@ async function sendMessage() {
         renderChat();
         renderFiles();
         renderTabs();
-        renderEditor();
+        if (lastFile) openFile(lastFile);
+
     } catch (e) {
-        state.chat[state.chat.length - 1] = { role: 'assistant', content: 'Error: ' + e.message };
+        state.chat[state.chat.length - 1] = { role: 'assistant', content: `Error: ${e.message}` };
         saveState();
         renderChat();
     }
+    $('send-btn').disabled = false;
 }
 
 // Admin
@@ -177,13 +250,11 @@ $('admin-login-btn').onclick = () => {
         $('admin-settings').classList.remove('hidden');
         $('api-key-input').value = state.settings.apiKey;
         $('model-select').value = state.settings.model;
-    } else {
-        alert('Wrong password');
-    }
+    } else alert('Wrong password');
 };
 
 $('save-settings-btn').onclick = () => {
-    state.settings.apiKey = $('api-key-input').value;
+    state.settings.apiKey = $('api-key-input').value.trim();
     state.settings.model = $('model-select').value;
     state.settings.fullHistory = $('full-history-toggle').checked;
     const newPass = $('admin-pass-set').value;
@@ -194,7 +265,7 @@ $('save-settings-btn').onclick = () => {
 };
 
 $('clear-chat-btn').onclick = () => {
-    if (confirm('Clear all chat memory? This cannot be undone.')) {
+    if (confirm('Wipe all chat memory?')) {
         state.chat = [];
         saveState();
         renderChat();
@@ -203,33 +274,35 @@ $('clear-chat-btn').onclick = () => {
 
 // Files
 $('new-file-btn').onclick = () => {
-    const name = prompt('File name:');
+    const name = prompt('New file name: index.html, style.css, app.js etc');
     if (name &&!state.files[name]) {
         state.files[name] = '';
-        state.activeFile = name;
-        saveState(); renderFiles(); renderTabs(); renderEditor();
+        saveState();
+        renderFiles();
+        renderTabs();
+        openFile(name);
     }
 };
 
-$('download-all-btn').onclick = () => {
+$('download-all-btn').onclick = async () => {
+    const zip = new JSZip();
     Object.entries(state.files).forEach(([name, content]) => {
-        const blob = new Blob([content], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = name;
-        a.click();
+        zip.file(name, content);
     });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'project.zip';
+    a.click();
 };
 
 // Resizer
 let isResizing = false;
-$('resizer').onmousedown = () => isResizing = true;
+$('resizer').onmousedown = e => { isResizing = true; e.preventDefault(); };
 document.onmousemove = e => {
     if (!isResizing) return;
     const pct = e.clientX / window.innerWidth * 100;
-    if (pct > 20 && pct < 80) {
-        $('chat-panel').style.width = pct + '%';
-    }
+    if (pct > 15 && pct < 85) $('chat-panel').style.width = pct + '%';
 };
 document.onmouseup = () => isResizing = false;
 
@@ -241,5 +314,3 @@ $('chat-input').onkeydown = e => {
         sendMessage();
     }
 };
-
-loadState();
